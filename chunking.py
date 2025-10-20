@@ -78,56 +78,49 @@ def lambda_handler(event, context):
         raise ValueError("Missing required input parameters: bucketName or inputFiles")
 
     output_files = []
-
+    
     for input_file in input_files:
-        file_metadata = input_file.get("fileMetadata", {})
-        original_file_location = input_file.get("originalFileLocation", {})
-        content_batches = input_file.get("contentBatches", [])
+        content_batches = input_file.get('contentBatches', [])
+        file_metadata = input_file.get('fileMetadata', {})
+        original_file_location = input_file.get('originalFileLocation', {})
 
         processed_batches = []
 
         for batch in content_batches:
             input_key = batch.get("key")
             if not input_key:
-                raise ValueError("Missing input batch key")
+                raise ValueError("Missing uri in content batch")
 
-            # Read input batch JSON
-            obj = s3.get_object(Bucket=input_bucket, Key=input_key)
-            batch_data = json.loads(obj["Body"].read().decode("utf-8"))
+            # Read input file from S3
+            obj = s3.get_object(Bucket=input_bucket, Key=input_key)           
+            file_content = obj["Body"].read().decode("utf-8")
+            batch_data = json.loads(file_content)
+            # Process content (chunking)
+            file_chunks = json_to_path_chunks(batch_data, file_name=input_key)
+            file_chunks.append({
+                'contentMetadata': file_metadata
+            })
 
-            # Perform chunking for each fileContent entry
-            chunked_output = {"fileContents": []}
-            for content in batch_data.get("fileContents", []):
-                content_body = content.get("contentBody", "")
-                content_type = content.get("contentType", "text/plain")
-                content_metadata = content.get("contentMetadata", {})
-
-                try:
-                    parsed = json.loads(content_body)
-                except Exception:
-                    parsed = {"text": content_body}  # fallback for plain text
-
-                chunks = json_to_path_chunks(parsed, file_name=input_key)
-
-                # Write each chunk as a separate contentBody item
-                for ch in chunks:
-                    chunked_output["fileContents"].append({
-                        "contentType": content_type,
-                        "contentMetadata": {**content_metadata, "chunkId": ch["id"], "path": ch["path"]},
-                        "contentBody": ch["content"]
-                    })
-
-            # Upload processed batch to Output/
-            output_key = f"Output/{os.path.basename(input_key)}"
+        
+            output_key = f"Output/{input_key}"
+            
+            # Write processed content back to S3
             s3.put_object(
                 Bucket=input_bucket,
                 Key=output_key,
-                Body=json.dumps(chunked_output).encode("utf-8"),
+                Body=json.dumps(file_chunks).encode("utf-8"),
                 ContentType="application/json"
             )
 
-            processed_batches.append({"key": output_key})
-            print(f"✅ Processed {input_key} -> {output_key} ({len(chunked_output['fileContents'])} chunks)")
+            processed_batches.append(
+                {
+                    'key':output_key
+                }
+            )
+
+        if not processed_batches:
+            print(" No processed batchs.")
+            return {"statusCode": 200, "body": "No valid JSON batch found."}
 
         output_files.append({
             "originalFileLocation": original_file_location,
