@@ -1,7 +1,5 @@
-import json
 import boto3
-import os
-import hashlib
+import json, hashlib
 
 s3 = boto3.client("s3")
 
@@ -10,10 +8,12 @@ s3 = boto3.client("s3")
 # -------------------------------
 
 def generate_chunk_id(file_path, json_path):
+    """Generate a unique ID for each chunk."""
     base = f"{file_path}:{json_path}"
     return hashlib.md5(base.encode("utf-8")).hexdigest()
 
 def normalize_json_path(path):
+    """Normalize JSON paths for readability."""
     return path.replace("[", ".").replace("]", "").replace("..", ".")
 
 def is_entity_like(obj):
@@ -25,47 +25,45 @@ def is_entity_like(obj):
     nested_count = sum(isinstance(v, (dict, list)) for v in obj.values())
     return nested_count <= 1
 
-def json_to_path_chunks(data, prefix="root", file_name="unknown.json", max_chunks=1000):
+def json_to_path_chunks(data, prefix="root", file_name="unknown.json", max_chunks=100):
+    """
+    Converts JSON into Bedrock KB-compatible chunks.
+    Returns a list of dicts with "key", "content", "metadata".
+    """
     chunks = []
+
     def recurse(value, path):
         if isinstance(value, dict):
             if is_entity_like(value):
                 chunk_id = generate_chunk_id(file_name, path)
-                content = json.dumps(value, indent=2)
+                content = json.dumps(value, indent=2, ensure_ascii=False)
                 chunks.append({
-                    "fileContents": [{              # Bedrock expects enum TEXT, PDF, etc.
-                    "contentBody": content ,
-                    "contentType": "TEXT", 
-                    "contentMetadata":{
-                    "id": chunk_id,
-                    "file_name": file_name,
-                    "path": normalize_json_path(path)
-                    }     
-                   }    ]        
+                    "key": chunk_id,
+                    "content": content,
+                    "metadata": {
+                        "fileName": file_name,
+                        "path": normalize_json_path(path)
+                    }
                 })
             else:
                 for k, v in value.items():
                     recurse(v, f"{path}.{k}")
         elif isinstance(value, list):
             for i, v in enumerate(value):
-                recurse(v, f"{path}.{i}")
+                recurse(v, f"{path}[{i}]")
         else:
             chunk_id = generate_chunk_id(file_name, path)
             chunks.append({
-                    "fileContents": [{   
-                    "contentBody": json.dumps(value),
-                    "contentType": "TEXT", 
-                    "contentMetadata":{
-                    "id": chunk_id,
-                    "file_name": file_name,
+                "key": chunk_id,
+                "content": str(value),
+                "metadata": {
+                    "fileName": file_name,
                     "path": normalize_json_path(path)
-                    }     
-                   }    ]        
-                
+                }
             })
+
     recurse(data, prefix)
     return chunks[:max_chunks]
-
 
 # -------------------------------
 # Lambda Handler
@@ -73,70 +71,60 @@ def json_to_path_chunks(data, prefix="root", file_name="unknown.json", max_chunk
 
 def lambda_handler(event, context):
     """
-    Custom Bedrock KB chunking Lambda:
-    Reads each contentBatch JSON from the intermediate bucket,
-    applies structured chunking, writes processed results to Output/,
-    and returns the outputFiles manifest.
+    Custom KB chunking Lambda:
+    - Reads content from S3
+    - Applies structured chunking
+    - Writes processed chunks back to S3
+    - Returns manifest in Bedrock-compatible format
     """
-
     print(f"📥 Received event: {json.dumps(event)[:500]}")
 
-    # Extract bucket name and input file list
     input_bucket = event.get("bucketName")
     input_files = event.get("inputFiles", [])
-    original_file_location = event.get('originalFileLocation', {})
-    output_bucket = "aws-ai-hackathon"# I know this hardcoded part is ugly, will fix this when i have time
-
+    original_file_location = event.get("originalFileLocation", {})
+    output_bucket = "aws-ai-hackathon"  # TODO: parameterize
 
     if not input_bucket or not input_files:
         raise ValueError("Missing required input parameters: bucketName or inputFiles")
 
     output_files = []
-    
-    for input_file in input_files:
-        content_batches = input_file.get('contentBatches', [])
 
+    for input_file in input_files:
+        content_batches = input_file.get("contentBatches", [])
         processed_batches = []
 
         for batch in content_batches:
             input_key = batch.get("key")
             if not input_key:
-                raise ValueError("Missing uri in content batch")
+                raise ValueError("Missing key in content batch")
 
             # Read input file from S3
-            obj = s3.get_object(Bucket=input_bucket, Key=input_key)           
+            obj = s3.get_object(Bucket=input_bucket, Key=input_key)
             file_content = obj["Body"].read().decode("utf-8")
             batch_data = json.loads(file_content)
-            # Process content (chunking)
+
+            # Chunk JSON content
             file_chunks = json_to_path_chunks(batch_data, file_name=input_key)
 
-        
+            # Write chunks back to S3
             output_key = f"Output/{input_key}"
-            
-            # Write processed content back to S3
             s3.put_object(
                 Bucket=output_bucket,
                 Key=output_key,
                 Body=json.dumps(file_chunks).encode("utf-8")
             )
 
-            processed_batches.append(
-                {
-                    'key':output_key
-                }
-            )
+            # Each batch returned must have a key pointing to the S3 location
+            processed_batches.append({
+                "key": output_key
+            })
 
-        if not processed_batches:
-            print(" No processed batchs.")
-            return {"statusCode": 200, "body": "No valid JSON batch found."}
-          
-        # Prepare output file information
+        # Return each file as an object containing processed batches
         output_file = {
-            'originalFileLocation': original_file_location,
-            'contentBatches': processed_batches
+            "originalFileLocation": original_file_location,
+            "contentBatches": processed_batches
         }
         output_files.append(output_file)
-
 
     result = {"outputFiles": output_files}
     print(f"🎉 Returning output manifest: {json.dumps(result)[:500]}")
