@@ -73,6 +73,9 @@ def lambda_handler(event, context):
     # Extract bucket name and input file list
     input_bucket = event.get("bucketName")
     input_files = event.get("inputFiles", [])
+    original_file_location = event.get('originalFileLocation', {})
+    output_bucket = "aws-ai-hackathon"
+
 
     if not input_bucket or not input_files:
         raise ValueError("Missing required input parameters: bucketName or inputFiles")
@@ -81,8 +84,6 @@ def lambda_handler(event, context):
     
     for input_file in input_files:
         content_batches = input_file.get('contentBatches', [])
-        file_metadata = input_file.get('fileMetadata', {})
-        original_file_location = input_file.get('originalFileLocation', {})
 
         processed_batches = []
 
@@ -97,16 +98,13 @@ def lambda_handler(event, context):
             batch_data = json.loads(file_content)
             # Process content (chunking)
             file_chunks = json_to_path_chunks(batch_data, file_name=input_key)
-            file_chunks.append({
-                'contentMetadata': file_metadata
-            })
 
         
             output_key = f"Output/{input_key}"
             
             # Write processed content back to S3
             s3.put_object(
-                Bucket=input_bucket,
+                Bucket=output_bucket,
                 Key=output_key,
                 Body=json.dumps(file_chunks).encode("utf-8"),
                 ContentType="application/json"
@@ -124,7 +122,6 @@ def lambda_handler(event, context):
 
         output_files.append({
             "originalFileLocation": original_file_location,
-            "fileMetadata": file_metadata,
             "contentBatches": processed_batches
         })
 
