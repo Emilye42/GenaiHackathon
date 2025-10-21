@@ -33,10 +33,15 @@ def json_to_path_chunks(data, prefix="root", file_name="unknown.json", max_chunk
                 chunk_id = generate_chunk_id(file_name, path)
                 content = json.dumps(value, indent=2)
                 chunks.append({
+                    "fileContents": [{              # Bedrock expects enum TEXT, PDF, etc.
+                    "contentBody": content ,
+                    "contentType": "TEXT", 
+                    "contentMetadata":{
                     "id": chunk_id,
-                    "path": normalize_json_path(path),
-                    "content": content,
-                    "metadata": {"file_name": file_name, "type": "entity"}
+                    "file_name": file_name,
+                    "path": normalize_json_path(path)
+                    }     
+                   }    ]        
                 })
             else:
                 for k, v in value.items():
@@ -74,7 +79,7 @@ def lambda_handler(event, context):
     input_bucket = event.get("bucketName")
     input_files = event.get("inputFiles", [])
     original_file_location = event.get('originalFileLocation', {})
-    output_bucket = "aws-ai-hackathon"
+    output_bucket = "aws-ai-hackathon"# I know this hardcoded part is ugly, will fix this when i have time
 
 
     if not input_bucket or not input_files:
@@ -106,8 +111,7 @@ def lambda_handler(event, context):
             s3.put_object(
                 Bucket=output_bucket,
                 Key=output_key,
-                Body=json.dumps(file_chunks).encode("utf-8"),
-                ContentType="application/json"
+                Body=json.dumps(file_chunks).encode("utf-8")
             )
 
             processed_batches.append(
@@ -119,13 +123,15 @@ def lambda_handler(event, context):
         if not processed_batches:
             print(" No processed batchs.")
             return {"statusCode": 200, "body": "No valid JSON batch found."}
+          
+        # Prepare output file information
+        output_file = {
+            'originalFileLocation': original_file_location,
+            'contentBatches': processed_batches
+        }
+        output_files.append(output_file)
 
-        output_files.append({
-            "originalFileLocation": original_file_location,
-            "contentBatches": processed_batches
-        })
 
     result = {"outputFiles": output_files}
     print(f"🎉 Returning output manifest: {json.dumps(result)[:500]}")
     return result
-e
