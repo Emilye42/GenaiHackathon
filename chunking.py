@@ -52,10 +52,16 @@ def json_to_path_chunks(data, prefix="root", file_name="unknown.json", max_chunk
         else:
             chunk_id = generate_chunk_id(file_name, path)
             chunks.append({
-                "id": chunk_id,
-                "path": normalize_json_path(path),
-                "content": json.dumps(value),
-                "metadata": {"file_name": file_name, "type": "field"}
+                    "fileContents": [{   
+                    "contentBody": json.dumps(value),
+                    "contentType": "TEXT", 
+                    "contentMetadata":{
+                    "id": chunk_id,
+                    "file_name": file_name,
+                    "path": normalize_json_path(path)
+                    }     
+                   }    ]        
+                
             })
     recurse(data, prefix)
     return chunks[:max_chunks]
