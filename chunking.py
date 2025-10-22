@@ -86,7 +86,9 @@ def lambda_handler(event, context):
 
     input_bucket = event.get("bucketName")
     input_files = event.get("inputFiles", [])
-    output_bucket = "aws-ai-hackathon"  # TODO: make configurable
+    output_bucket = "s3bucketforchunkingpurpose"  # TODO: make configurable
+    ingestion_job_id = event.get("ingestionJobId")#: "BXWECQDZZP",
+    
 
     if not input_bucket or not input_files:
         raise ValueError("Missing required input parameters: bucketName or inputFiles")
@@ -104,7 +106,7 @@ def lambda_handler(event, context):
             input_key = batch.get("key")
             if not input_key:
                 raise ValueError("Missing key in content batch")
-
+#            input_key = f"aws/bedrock/knowledge_bases/CUTT6GVNC4/JZIVCQDGPW/{ingestion_job_id}/{input_key}"
             # Read JSON content from S3
             obj = s3.get_object(Bucket=input_bucket, Key=input_key)
             file_content = obj["Body"].read().decode("utf-8")
@@ -115,13 +117,13 @@ def lambda_handler(event, context):
 
             # Upload each chunk to S3 and collect its S3 URI
             for i, chunk in enumerate(file_chunks):
-                chunk_key = f"Output/{input_key}/chunk_{i}.json"
+                chunk_key = f"Output/aws/bedrock/knowledge_bases/CUTT6GVNC4/JZIVCQDGPW/{ingestion_job_id}/{input_key}/chunk_{i}.json"
                 s3.put_object(
                     Bucket=output_bucket,
                     Key=chunk_key,
                     Body=json.dumps(chunk).encode("utf-8")
                 )
-                processed_batches.append({"key": f"s3://{output_bucket}/{chunk_key}"})
+                processed_batches.append({"key":chunk_key})
 
         # Add to output manifest
         output_files.append({
