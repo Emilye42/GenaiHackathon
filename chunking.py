@@ -117,7 +117,7 @@ def lambda_handler(event, context):
 
             # Upload each chunk to S3 and collect its S3 URI
             for i, chunk in enumerate(file_chunks):
-                chunk_key = f"Output/aws/bedrock/knowledge_bases/CUTT6GVNC4/JZIVCQDGPW/{ingestion_job_id}/{input_key}/chunk_{i}.json"
+                chunk_key = f"Output/{input_key}/chunk_{i}.json"
                 s3.put_object(
                     Bucket=output_bucket,
                     Key=chunk_key,
