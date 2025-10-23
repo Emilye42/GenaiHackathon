@@ -44,7 +44,3 @@ CloudFormation Composer is an AI-powered tool that helps users generate AWS Clou
 3. **Lambda Function**: Deploy the Lambda wrapper function that invokes the Bedrock agent and returns responses in JSON format.  
 4. **Environment Variables**: Set `AGENT_ID` and `AGENT_ALIAS_ID` in the Lambda function.  
 5. **CORS Configuration**: Ensure the Lambda function returns CORS headers to allow the browser to call the API.  
-
-## Example
-
-**User Input:**  
