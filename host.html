@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Bedrock Agent Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    #chat { border: 1px solid #ccc; padding: 1rem; max-width: 600px; height: 400px; overflow-y: auto; }
+    .message { margin-bottom: 1rem; }
+    .user { color: blue; }
+    .agent { color: green; }
+    input { width: 400px; }
+  </style>
+</head>
+<body>
+  <h1>Cloud Formation Composer</h1>
+  <div id="chat"></div>
+  <input id="query" placeholder="Enter query" />
+  <button id="sendBtn">Ask</button>
+
+  <script>
+    const chatDiv = document.getElementById('chat');
+    const input = document.getElementById('query');
+    const button = document.getElementById('sendBtn');
+    const API_URL = "https://i8aut5sing.execute-api.us-east-1.amazonaws.com/chat/query";
+
+    // Append a message to the chat
+    function appendMessage(sender, text) {
+      const div = document.createElement('div');
+      div.className = 'message ' + sender;
+      div.textContent = `${sender}: ${text}`;
+      chatDiv.appendChild(div);
+      chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+
+    // Send message to API Gateway / Lambda
+    async function askAgent() {
+      const query = input.value.trim();
+      if (!query) return;
+
+      appendMessage('user', query);
+      input.value = '';
+
+      try {
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query })
+        });
+        const data = await response.json();
+        appendMessage('agent', data.response || 'No response.');
+      } catch (err) {
+        appendMessage('agent', 'Error: ' + err.message);
+      }
+    }
+
+    button.addEventListener('click', askAgent);
+    input.addEventListener('keypress', e => {
+      if (e.key === 'Enter') askAgent();
+    });
+  </script>
+</body>
+</html>
